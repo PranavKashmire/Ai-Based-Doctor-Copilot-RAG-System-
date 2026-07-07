@@ -1,8 +1,32 @@
-# 🏥 Doctor's Co-Pilot — Production-Grade Clinical RAG Engine
+# 🏥 Project: Doctor's Co-Pilot
 
-Doctor's Co-Pilot is a Retrieval-Augmented Generation (RAG) system designed for clinical environments. It allows medical practitioners to query complex patient records, discharge summaries, and clinical notes in natural language via an interactive dashboard. 
+## 🏷️ Project Name
+**Doctor's Co-Pilot — Production-Grade Clinical RAG (Retrieval-Augmented Generation) Engine**
 
-This engine is architected to address real-world deployment challenges including **strict patient data isolation (HIPAA alignment)**, **dynamic multi-format document ingestion**, and **stateful multi-turn conversation memory**.
+---
+
+## 🎯 Overview
+**Doctor's Co-Pilot** is an advanced, domain-specific Retrieval-Augmented Generation (RAG) system engineered for clinical healthcare environments. It provides medical practitioners with an interactive, natural language chat interface to query patient clinical notes, discharge summaries, and lab results. 
+
+The system leverages state-of-the-art Large Language Models (LLMs), serverless vector databases, and cross-encoder reranking models to retrieve, rank, and summarize patient medical records accurately.
+
+---
+
+## ⚠️ The Problems It Solves
+Deploying AI in healthcare environments introduces strict engineering constraints that simple RAG systems cannot handle. Doctor's Co-Pilot directly solves these production challenges:
+
+1. **🔒 Cross-Patient Data Leakage (HIPAA Isolation):**
+   * *Problem:* In standard semantic vector search, a query about a symptom (e.g., *"What is his heart rate?"*) might retrieve notes belonging to other patients who have similar symptoms. This violates HIPAA data privacy rules.
+   * *Solution:* Doctor's Co-Pilot implements **strict metadata filtering**. Vector database queries are isolated via user-scoped metadata constraints: `filter={"patient_id": {"$eq": patient_id}}`, ensuring data boundaries are absolute.
+2. **🧠 Conversational Context Loss in Multi-Turn RAG:**
+   * *Problem:* Follow-up questions (e.g. *"What is his dosage?"*) lack keywords like the patient ID or medication name, leading to poor vector database retrieval.
+   * *Solution:* Employs **pre-retrieval query condensing** using LLM memory to automatically rewrite conversational queries into standalone context-rich search terms before searching the index.
+3. **💥 LLM Distraction & Token Bloat:**
+   * *Problem:* Passing too many context chunks to the LLM increases token costs and degrades generation quality (known as the "lost in the middle" effect).
+   * *Solution:* Introduces a **two-stage retrieval pipeline**. The system queries 25 candidates from Pinecone and rerank-filters them down to the top 5 using a high-precision local cross-encoder model (**FlashRank**), reducing context sizes by over 30%.
+4. **🚫 Medical Hallucinations:**
+   * *Problem:* Standard LLMs generate answers based on pre-training data, which is unacceptable for medical diagnostics.
+   * *Solution:* Employs a strict medical grounding system prompt that forces the generator to answer **ONLY** using the retrieved notes, explicitly list source citations, and refuse to answer if information is missing.
 
 ---
 
@@ -32,51 +56,67 @@ This engine is architected to address real-world deployment challenges including
      │ (Pinecone Vector) │                          │ (Pinecone Index)  │
      └─────────┬─────────┘                          └───────────────────┘
                │ (Filters by Active Patient ID)
-               ▼ (Retrieves top-K source chunks)
+               ▼ (Retrieves top-25 candidate chunks)
      ┌───────────────────┐
-     │ 4. Grounded Gen   │
+     │ 4. Cross-Rerank   │
+     │ (FlashRank Engine)│
+     └─────────┬─────────┘
+               │ (Reranks down to top-5 most relevant)
+               ▼
+     ┌───────────────────┐
+     │ 5. Grounded Gen   │
      │(gemini-2.5-flash) │
      └─────────┬─────────┘
                │ (Grounded answer strictly via sources)
                ▼
      ┌───────────────────┐
-     │ 5. Response Render│
-     │  (Chat Bubbles)   │
+     │ 6. Response Render│
+     │ (Explainable UI)  │
      └───────────────────┘
 ```
 
 ---
 
-## ⚡ Key Production-Grade Features
-
-### 1. 🔒 HIPAA-Aligned Patient Data Isolation (Metadata Filtering)
-In a hospital setting, search queries must never leak data between patients. The backend enforces security by binding Pinecone vector queries to metadata filters: `filter={"patient_id": {"$eq": patient_id}}`. This guarantees that vector retrieval is partitioned exclusively to the active patient, even if other patient records have similar semantic symptoms.
-
-### 2. 📄 Dynamic Document Ingestion Pipeline
-Allows doctors to upload clinical summaries in PDF or Plain Text formats directly from the dashboard. The backend dynamically:
-* Extracts raw text from multi-page PDFs using `pypdf`.
-* Splits text using a **sliding-window word chunker** (150 words per chunk with 30-word overlaps) to preserve local semantic context.
-* Generates 3072-dimensional embeddings via Gemini and batch-upserts them to Pinecone with structured metadata.
-
-### 3. 🧠 Context-Aware Query Condensing (Conversational Memory)
-Handles multi-turn dialogue naturally. If a doctor asks a follow-up question (e.g., *"What is his dosage?"*), a pre-retrieval loop rephrases it into a standalone query (e.g., *"What is patient PT-8829's dosage for Amiodarone?"*) using the conversation's history. This rephrased query is what searches the vector database, resolving retrieval context limits.
-
-### 4. 🔬 Explainable AI Tracing
-The chat UI renders:
-* **The Condensed Query:** Showing how the conversation history was compiled before searching.
-* **Vector Source Citations:** Detailed cards for each matching chunk, including dates, departments, prescribing doctors, and cosine similarity scores.
+## 🛠️ Tech Stack
+* **LLM (Generation):** Google Gemini SDK (`gemini-2.5-flash`)
+* **Vector Embeddings:** Google Gemini SDK (`gemini-embedding-001`, 3072 dimensions)
+* **Vector Database:** Pinecone (Serverless cosine index)
+* **Reranking Engine:** FlashRank (Lightweight ONNX Cross-Encoder: `ms-marco-TinyBERT-L-2-v2`)
+* **Backend Framework:** Python Flask (with `werkzeug` and `pypdf`)
+* **Frontend UI:** Glassmorphic Dark-Themed Dashboard (HTML, CSS, Vanilla JS)
 
 ---
 
-## 🛠️ Tech Stack
+## 📖 Detailed Explanation of Operations
 
-| Layer | Technology | Description |
-|---|---|---|
-| **Vector DB** | Pinecone (Serverless) | Fast metadata-filtered similarity search |
-| **Embeddings** | Gemini `embedding-001` | High-quality 3072-dimension semantic vectors |
-| **LLM Generation**| Gemini `gemini-2.5-flash` | Ultra-fast grounded generation with rate-limiting retries |
-| **Backend** | Flask (Python 3.10+) | Secure file uploads, session memory, and RAG execution |
-| **Frontend** | Vanilla HTML / CSS / JS | Cyberpunk glassmorphic medical dashboard UI |
+### 1. The Ingestion Pipeline (Dynamic Document Parsing)
+* **File Upload:** The Flask endpoint `/api/upload` accepts a PDF or TXT file along with patient metadata (Patient ID, Doctor Name, Department, Date).
+* **Text Extraction:** Raw text is extracted from multi-page files page-by-page.
+* **Sliding-Window Chunking:** Chunks are split using a character/word boundary splitter set to 150 words per chunk with a 30-word overlap. This overlap ensures clinical notes do not lose critical diagnostic sentences at the boundaries of the split text.
+* **Batch Embedding:** Chunks are batch-sent to the embedding API and mapped to 3072-dimension vectors.
+* **Metadata Association:** The vectors are upserted into Pinecone with attached metadata keys:
+  ```json
+  {
+    "id": "upload-PT-9999-0-1783411",
+    "values": [0.012, -0.045, ...],
+    "metadata": {
+      "patient_id": "PT-9999",
+      "doctor_name": "Dr. Sen",
+      "department": "Oncology",
+      "date": "2024-05-05",
+      "text": "Patient PT-9999 was started on Cisplatin..."
+    }
+  }
+  ```
+
+### 2. The Query Pipeline (Explainable Answering)
+* **Active Filter Scoping:** The UI captures the selected active patient filter input and scopes the search parameters.
+* **Conversational Context Condensing:** If a follow-up query is detected within the active Session ID, the backend rephrases the follow-up question (e.g. *"What is his dosage?"*) to merge historical reference data into a standalone search query.
+* **Vector Vectorization:** The condensed query is translated into a 3072-dimensional search vector.
+* **Candidate Retrieval (Pinecone):** Pinecone performs vector retrieval but limits the candidate space by matching `patient_id` metadata. It retrieves the top 25 candidate chunks.
+* **Cross-Encoder Reranking (FlashRank):** The 25 candidates are cross-scored against the condensed query on the local server CPU. Chunks are re-ordered and sliced down to the **top 5**.
+* **Prompt Assembly:** The 5 context chunks, history logs, and prompt guidelines are compiled into a custom prompt instructing the LLM to act as a grounded assistant.
+* **UI citations Rendering:** The chat renders the response, the condensed query, and CITATION tags displaying rank and scoring indicators.
 
 ---
 
@@ -95,7 +135,6 @@ pip install -r requirements.txt
 ```
 
 ### 3. Run Vector Database Initialization (Once)
-Populate the vector index with sample patient records:
 ```bash
 python setup_pinecone.py
 ```
@@ -105,25 +144,3 @@ python setup_pinecone.py
 python app.py
 ```
 Open **http://localhost:5000** in your browser.
-
----
-
-## 🧪 Testing the Advanced Capabilities
-
-1. **Test Conversational Memory:**
-   * Enter `PT-8829` in the **Active Patient Filter**.
-   * Ask: *"Why was this patient admitted in January 2024?"*
-   * Follow up with: *"What procedure was performed for it?"*
-   * *Notice:* The UI displays the condensed search query indicating it merged the context of the previous turn.
-
-2. **Test Isolation (HIPAA Compliance):**
-   * Clear the chat session.
-   * Set the filter to `PT-1234` (Diabetes history).
-   * Ask: *"Summarize his cardiac complications."*
-   * *Result:* The engine will correctly report no records found, because `PT-8829`'s cardiac notes are locked out by the filter.
-
-3. **Test PDF Ingestion:**
-   * Fill out the **Ingest Patient File** form (e.g., ID: `PT-9999`, Doctor: `Dr. Sen`, Dept: `Oncology`).
-   * Upload a medical PDF or text file.
-   * Click **Upload & Index Chunks**.
-   * Query the system about the contents of the uploaded note under the active filter `PT-9999`.
