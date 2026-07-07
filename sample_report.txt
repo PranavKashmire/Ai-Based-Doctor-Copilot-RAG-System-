@@ -1,0 +1,5 @@
+Patient PT-9999 is a 62-year-old male with a history of stage III lung adenocarcinoma.
+Admitted on 2024-05-05 for severe dyspnea and persistent cough.
+Chest CT revealed a 4.2 cm mass in the left upper lobe with surrounding pleural effusion.
+Started on Cisplatin 75 mg/m2 and Pemetrexed 500 mg/m2 chemotherapy regimen under Dr. Sen in the Oncology department.
+Patient tolerated the first cycle well with mild nausea managed by Ondansetron.
